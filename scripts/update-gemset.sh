@@ -72,15 +72,20 @@ echo "==> Fixing platform-specific gem hashes in gemset.nix..."
 # but bundlerEnv downloads and verifies the source gem (ffi-1.17.2.gem).
 # Post-process gemset.nix: replace each platform gem's hash with the source gem hash.
 while IFS= read -r line; do
-  GEM="$(echo "$line" | grep -oP '^\s+\K[a-zA-Z0-9_-]+')"
+  # $line is already a bare gem name (the process substitution below stripped it),
+  # so use it directly. The previous `grep -oP '^\s+\K...'` required leading
+  # whitespace that isn't present, failing the command substitution under set -e
+  # and aborting the whole script on the first iteration.
+  GEM="$line"
   [ -z "$GEM" ] && continue
-  # Get version from gemset.nix (the source/non-platform entry)
-  GEM_VERSION="$(grep -A6 "^  ${GEM} = {" "$FLAKE_DIR/gemset.nix" | grep 'version =' | grep -oP '"[^"]+"' | tr -d '"')"
+  # Get version from gemset.nix (the source/non-platform entry).
+  # `|| true` so a gem missing from gemset.nix yields empty instead of tripping set -e.
+  GEM_VERSION="$(grep -A6 "^  ${GEM} = {" "$FLAKE_DIR/gemset.nix" | grep 'version =' | grep -oP '"[^"]+"' | tr -d '"' || true)"
   [ -z "$GEM_VERSION" ] && continue
-  CORRECT_HASH="$(nix-prefetch-url --type sha256 "https://rubygems.org/gems/${GEM}-${GEM_VERSION}.gem" 2>/dev/null)"
+  CORRECT_HASH="$(nix-prefetch-url --type sha256 "https://rubygems.org/gems/${GEM}-${GEM_VERSION}.gem" 2>/dev/null || true)"
   [ -z "$CORRECT_HASH" ] && continue
   # Replace the sha256 in the gem's block
-  OLD_HASH="$(grep -A6 "^  ${GEM} = {" "$FLAKE_DIR/gemset.nix" | grep 'sha256 =' | grep -oP '"[^"]+"' | tr -d '"')"
+  OLD_HASH="$(grep -A6 "^  ${GEM} = {" "$FLAKE_DIR/gemset.nix" | grep 'sha256 =' | grep -oP '"[^"]+"' | tr -d '"' || true)"
   [ -z "$OLD_HASH" ] || [ "$OLD_HASH" = "$CORRECT_HASH" ] && continue
   echo "    ${GEM} ${GEM_VERSION}: ${OLD_HASH} → ${CORRECT_HASH}"
   sed -i "s/${OLD_HASH}/${CORRECT_HASH}/" "$FLAKE_DIR/gemset.nix"
