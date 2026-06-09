@@ -116,9 +116,14 @@ in
       "d ${cfg.dataDir}/log     0750 ${cfg.user} ${cfg.group} -"
     ];
 
-    # ── sure-setup: run DB migrations on every boot (idempotent) ─────────────
+    # ── sure-setup: prepare the DB on every boot (idempotent) ────────────────
+    # Use db:prepare (not db:migrate) to match upstream Sure's bin/docker-entrypoint.
+    # On a fresh DB it loads db/schema.rb + seeds; on an existing DB it runs pending
+    # migrations. Plain db:migrate replays all historical migrations from scratch and
+    # fails on old data migrations that reference the current models (e.g. the
+    # AddAdminRoleToCurrentUsers migration vs. User's enum :ui_layout).
     systemd.services.sure-setup = {
-      description = "Sure — database migrations";
+      description = "Sure — database setup (db:prepare)";
       wantedBy    = [ "multi-user.target" ];
       serviceConfig = commonServiceConfig // {
         Type            = "oneshot";
@@ -127,7 +132,7 @@ in
       environment = commonEnv;
       script = ''
         set -euo pipefail
-        ${cfg.package}/bin/sure-rails db:migrate
+        ${cfg.package}/bin/sure-rails db:prepare
       '';
     };
 
